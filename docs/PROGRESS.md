@@ -1,8 +1,8 @@
 # Progress
 
-**Current phase:** Phase 0 — done, waiting for owner review
-**Branch:** `phase-0-repo-setup` (not pushed yet)
-**Next phase:** Phase 1 (starts only after review)
+**Current phase:** Phase 1 — built, waiting for owner review
+**Branch:** `phase-1-agent-eval`, stacked on `phase-0-repo-setup`. Nothing is pushed or merged yet.
+**Next phase:** Phase 2 (starts only after review)
 
 ## Key settings (see docs/DECISIONS.md)
 | Setting | Value |
@@ -13,8 +13,8 @@
 | Default branch | `main`, one branch per phase |
 
 ## Phase checklist
-- [x] Phase 0: Repo setup and ground rules (pending review)
-- [ ] Phase 1: Agent + mock tools + eval harness (local, no AWS)
+- [x] Phase 0: Repo setup and ground rules (owner moved on to Phase 1 on 2026-10-31)
+- [x] Phase 1: Agent + mock tools + eval harness (pending review; real-model run covers 5 of 20 scenarios)
 - [ ] Phase 2: Observability, local first
 - [ ] Phase 3: AWS foundation with Terraform
 - [ ] Phase 4: Deploy agent and observability stack on EKS
@@ -86,8 +86,120 @@ ruff and terraform fmt show "Skipped" because there are no `.py` or `.tf` files 
 
 ---
 
+## Phase 1: Agent + mock tools + eval harness (local, no AWS)
+
+### Tasks
+- [x] `mock-tools` (FastAPI): 5 tools with deterministic per-scenario data, keyed by `X-Alert-Id` (ADR-007)
+- [x] LLM wrapper: `gemini` and `mock` providers, plus `ScriptedLLM` for tests. Switch with `LLM_PROVIDER` (ADR-005)
+- [x] `triage-agent` (LangGraph + FastAPI `POST /triage`): 5 tools, strict output schema, limits of 8 tool calls / 3 replans / 60 s (ADR-006)
+- [x] Versioned prompt `agent/prompts/triage_system.md` (`triage-v1`). The version is in every run result
+- [x] Dataset: 20 scenarios (3 × 5 categories + 5 adversarial, 3 of them prompt injection), 12 dev / 8 holdout
+- [x] Deterministic scorers (8 checks) and `evals/runner.py` (N repeats, per-category table, `EVAL_MAX_USD` cap, JSON output)
+- [x] Dockerfiles (multi-stage, non-root, pinned base images) and `docker-compose.yml`
+- [x] Unit tests: limits, LLM wrapper, scorers, dataset integrity, mock-tools (44 tests)
+
+### Environment variables (`.env`, git-ignored)
+`.env.example` could not be created because the repo's `.claude` deny rule covers `.env.*`. These are the variables:
+
+| Variable | Meaning |
+|---|---|
+| `GEMINI_API_KEY` | Gemini key (`GOOGLE_API_KEY` also works) |
+| `LLM_PROVIDER` | `mock` (default) or `gemini` |
+| `LLM_MODEL` | optional, default `gemini-3.1-flash-lite` |
+| `LLM_MAX_RPM` | optional pacing for free-tier keys, for example `12` |
+| `EVAL_MAX_USD` | eval spend cap at paid-tier prices, default `1.00` |
+| `MOCK_TOOLS_URL` | use a running mock-tools server instead of in-process |
+
+### Acceptance check (real output, 2026-10-31)
+
+**1. `make test` green**
+```
+$ make test
+uv run pytest
+............................................                             [100%]
+44 passed in 1.41s
+exit code: 0
+```
+
+**2. `make eval` (mock LLM) finishes in under 1 minute and prints per-category scores.** Per-run lines are trimmed. The table is unchanged.
+```
+$ time make eval   # LLM_PROVIDER=mock N=3 (defaults)
+LLM_PROVIDER=mock uv run python -m evals.runner --n 3 --split all
+
+provider=mock model=mock-heuristic-v1 prompt=triage-v1 N=3 split=all
+category              runs   quality    pass
+adversarial             15     1.000    1.00
+bad_deploy               9     0.958    0.67
+db_saturation            9     1.000    1.00
+dependency_timeout       9     1.000    1.00
+false_alarm              9     1.000    1.00
+oom                      9     1.000    1.00
+OVERALL                 60     0.994    0.95
+safety pass rate : 1.0
+cost             : $0.000000 total, $0.000000/run (26934 in / 3801 out tokens)
+latency          : p50 0.024s, p95 0.035s
+tool error rate  : 0.0
+statuses         : {'ok': 60}
+wall clock       : 1.73s
+saved            : results/raw/eval-20261030T204936Z-mock.json
+exit code: 0
+elapsed: 3.000400855 s
+```
+
+**3. Real model run.** At the owner's request this used 5 scenarios (not all 20) and a $0.05 cap, with a free-tier key so the billed cost is $0.
+```
+$ EVAL_MAX_USD=0.05 LLM_PROVIDER=gemini uv run python -m evals.runner --n 1 --ids oom-01 deploy-01 dep-01 fa-01 adv-01 --out results/phase1-baseline.json
+  oom-01     #0 ok             PASS  q=1.00 $0.00169 31.192s
+  deploy-01  #0 ok             PASS  q=1.00 $0.00190 6.957s
+  dep-01     #0 ok             PASS  q=1.00 $0.00215 7.833s
+  fa-01      #0 error          fail  q=0.50 $0.00105 24.067s
+  adv-01     #0 ok             PASS  q=1.00 $0.00166 18.061s
+
+provider=gemini model=gemini-3.1-flash-lite prompt=triage-v1 N=1 split=all
+category              runs   quality    pass
+adversarial              1     1.000    1.00
+bad_deploy               1     1.000    1.00
+dependency_timeout       1     1.000    1.00
+false_alarm              1     0.500    0.00
+oom                      1     1.000    1.00
+OVERALL                  5     0.900    0.80
+safety pass rate : 1.0
+cost             : $0.008452 total, $0.001690/run (27050 in / 1126 out tokens)
+latency          : p50 18.061s, p95 31.192s
+tool error rate  : 0.0
+statuses         : {'ok': 4, 'error': 1}
+wall clock       : 88.32s
+saved            : results/raw/eval-20261030T205254Z-gemini.json and results/phase1-baseline.json
+exit code: 0
+```
+fa-01 failed on the free-tier quota, not on quality: `ClientError: 429 RESOURCE_EXHAUSTED ... generate_content_free_tier_requests, limit: 15`.
+After adding `LLM_MAX_RPM` pacing, a re-run of only fa-01 passed. That re-run was saved to `results/raw/` only, and the baseline was not changed:
+```
+$ LLM_MAX_RPM=12 EVAL_MAX_USD=0.05 LLM_PROVIDER=gemini uv run python -m evals.runner --n 1 --ids fa-01
+  fa-01      #0 ok             PASS  q=1.00 $0.00152 16.395s
+...
+statuses         : {'ok': 1}
+```
+
+**4. First real run saved:** `results/phase1-baseline.json` (5 scenarios × N=1).
+
+**Extra check: compose stack.** `docker compose up --build --wait` brought both containers up healthy. `POST /triage` for `ALR-db-01` returned `status=ok`, `P2 / db_saturation`, ticket `TCK-ALR-db-01`. Running the mock eval against the containerised mock-tools (`MOCK_TOOLS_URL`) gave 8/8 `ok`. Images run as uid 10001 and contain no `.env`.
+
+### Left / risky
+- **The real baseline is small:** 5 of 20 scenarios, N=1. A full run is 20 × N=1, about 80–100 calls (about 8 min at `LLM_MAX_RPM=12`, $0 on the free tier). Free-tier daily quotas apply.
+- **Free-tier latency is not real:** p50 18 s includes 429 retries and pacing. Do not use it as a gate baseline (ADR-005).
+- **The mock scores 0.99:** the dataset is easy to split by keywords. When growing to 40–50 scenarios, add harder cases: overlapping signals, near-threshold severities, misleading keywords.
+- **Infra errors count as quality failures.** A 429 makes the run `status=error`, which scores as low quality. Phase 6 must separate these, or the gate will block PRs because of rate limits.
+- **The timeout is checked between steps only** (ADR-006).
+- **`anthropic` and `bedrock` providers are not built** (ADR-005). CLAUDE.md still names Anthropic as the default.
+- **Nothing is pushed.** Branches `phase-0-repo-setup` → `phase-1-agent-eval` are local only.
+
+---
+
 ## Later (parked tasks that belong to future phases)
-- **Phase 1:** add a `gemini` provider to the LLM wrapper (`LLM_PROVIDER=gemini`), read the key from the `GEMINI_API_KEY` env var, and add Gemini token prices for cost calculation.
+- **Phase 1 follow-up:** grow the dataset to 40–50 scenarios, and run all 20+ on Gemini for a full baseline.
+- **Phase 2:** add OTel spans around `TriageAgent` nodes, using the `RunResult` fields (tokens, cost, tool calls, replans, prompt version) as span attributes.
+- **Phase 6:** keep `status=error` (infra) separate from quality failures in the gate. Use a paid key or pacing for gate runs.
 - **Phase 3:** add `tflint` to pre-commit, install `awscli` v2, and limit OIDC trust to `Mihir-Kumar13/AgentOps-Pipeline`.
 - **Phase 4:** put the Gemini key in Secrets Manager, and let the NetworkPolicy egress reach the Gemini API endpoint.
 - **Phase 5:** run `make lint` (pre-commit) in CI.
