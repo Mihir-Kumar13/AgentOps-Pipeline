@@ -1,0 +1,55 @@
+# --- Secrets (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials
+credentials.json
+service-account*.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# --- Terraform ---
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+crash.log
+crash.*.log
+*.tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# .terraform.lock.hcl is committed on purpose (pins provider versions)
+
+# --- Kubernetes / Helm ---
+kubeconfig
+*.kubeconfig
+deploy/helm/**/charts/*.tgz
+
+# --- Eval results: only committed summaries, not raw runs ---
+results/raw/
+
+# --- Editor / OS / local tools ---
+.idea/
+.vscode/
+*.swp
+.DS_Store
+.qodo/
