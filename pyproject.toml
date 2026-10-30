@@ -1,4 +1,39 @@
-# Tool config only for now. Python dependencies are added in Phase 1.
+[project]
+name = "agentops-pipeline"
+version = "0.1.0"
+description = "Incident-triage agent with an eval-gated delivery pipeline"
+requires-python = "==3.12.*"
+# Shared by agent and mock-tools.
+dependencies = [
+    "fastapi==0.162.0",
+    "httpx==0.28.1",
+    "pydantic==2.14.2",
+    "pyyaml==6.0.3",
+    "uvicorn==0.54.0",
+]
+
+[dependency-groups]
+# Only the agent image needs these; mock-tools stays small.
+agent = [
+    "google-genai==2.34.0",
+    "langgraph==1.2.18",
+    "python-dotenv==1.2.4",
+]
+dev = [
+    "pytest==9.2.0",
+]
+
+[tool.uv]
+# Not an installable package: code runs from the repo root (python -m ...).
+package = false
+default-groups = ["agent", "dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["agent/tests", "mock-tools/tests", "evals/tests"]
+# mock-tools/ has a dash, so its package is imported from inside that folder.
+pythonpath = [".", "mock-tools"]
+addopts = "-q"
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100
