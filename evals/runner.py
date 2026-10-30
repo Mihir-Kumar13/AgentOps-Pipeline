@@ -185,10 +185,10 @@ def main(argv: list[str] | None = None) -> int:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     raw_path = RAW_DIR / f"eval-{stamp}-{settings.llm_provider}.json"
-    raw_path.write_text(json.dumps(payload, indent=2))
+    raw_path.write_text(json.dumps(payload, indent=2) + "\n")
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(payload, indent=2))
+        args.out.write_text(json.dumps(payload, indent=2) + "\n")
 
     print_table(summary, meta)
     print(f"wall clock       : {meta['wall_clock_s']}s")
