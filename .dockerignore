@@ -1,0 +1,17 @@
+# Secrets must never reach an image build context.
+.env
+.env.*
+*.pem
+*.key
+
+.git
+.venv
+**/__pycache__
+**/.pytest_cache
+.ruff_cache
+results/
+infra/
+deploy/
+docs/
+.claude/
+.qodo/

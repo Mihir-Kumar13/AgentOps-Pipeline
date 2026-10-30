@@ -1,0 +1,27 @@
+# Local stack: triage-agent + mock-tools.  make compose-up / make compose-down
+# The LLM key is passed at runtime from the git-ignored .env, never baked into an image.
+services:
+  mock-tools:
+    build:
+      context: .
+      dockerfile: mock-tools/Dockerfile
+    image: agentops/mock-tools:dev
+    ports: ["8081:8081"]
+    read_only: true
+
+  agent:
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    image: agentops/triage-agent:dev
+    ports: ["8080:8080"]
+    read_only: true
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      MOCK_TOOLS_URL: http://mock-tools:8081
+    depends_on:
+      mock-tools:
+        condition: service_healthy
