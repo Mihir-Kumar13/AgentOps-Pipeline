@@ -5,6 +5,7 @@ import json
 import pytest
 from google.genai import types
 
+import agent.llm.gemini as gemini_mod
 from agent.llm.base import Message, ToolCall
 from agent.llm.gemini import _from_response, _to_contents
 from agent.llm.pricing import cost_usd
@@ -72,6 +73,32 @@ def test_gemini_response_parsing_skips_thoughts():
     assert msg.tool_calls[0].name == "get_logs"
     assert msg.tool_calls[0].args == {"q": 1}
     assert msg.raw is resp.candidates[0].content
+
+
+def test_gemini_pacing_spaces_calls(monkeypatch):
+    # Fake key: creating the client makes no network call.
+    monkeypatch.setenv("GEMINI_API_KEY", "test-not-a-real-key")
+    monkeypatch.setenv("LLM_MAX_RPM", "12")
+    clock = {"now": 100.0}
+    slept: list[float] = []
+    monkeypatch.setattr(gemini_mod.time, "monotonic", lambda: clock["now"])
+
+    def fake_sleep(s: float) -> None:
+        slept.append(s)
+        clock["now"] += s
+
+    monkeypatch.setattr(gemini_mod.time, "sleep", fake_sleep)
+    llm = gemini_mod.GeminiLLM(model="gemini-3.1-flash-lite")
+    llm._pace()  # first call: no wait
+    clock["now"] += 1.0
+    llm._pace()  # 60/12 = 5 s interval, 1 s already passed
+    assert slept == [pytest.approx(4.0)]
+
+
+def test_gemini_no_pacing_by_default(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-not-a-real-key")
+    monkeypatch.delenv("LLM_MAX_RPM", raising=False)
+    assert gemini_mod.GeminiLLM(model="m")._min_interval_s == 0.0
 
 
 def test_gemini_empty_response_becomes_empty_message():

@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 
 from google import genai
 from google.genai import types
@@ -19,10 +20,28 @@ class GeminiLLM:
         self.model = model
         self._client = genai.Client(
             api_key=api_key,
-            http_options=types.HttpOptions(timeout=int(timeout_s * 1000)),  # milliseconds
+            http_options=types.HttpOptions(
+                timeout=int(timeout_s * 1000),  # milliseconds
+                # The SDK does not retry unless asked. Retry rate limits (429) and
+                # transient 5xx with backoff; failed requests are not billed.
+                retry_options=types.HttpRetryOptions(attempts=4, initial_delay=2.0, max_delay=20.0),
+            ),
         )
+        # Optional client-side pacing for free-tier keys (for example LLM_MAX_RPM=12 under a
+        # 15/min quota). The wait is part of measured latency, so leave it unset for runs
+        # whose latency numbers matter.
+        rpm = float(os.getenv("LLM_MAX_RPM") or 0)
+        self._min_interval_s = 60.0 / rpm if rpm > 0 else 0.0
+        self._last_call = float("-inf")
+
+    def _pace(self) -> None:
+        wait = self._last_call + self._min_interval_s - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        self._last_call = time.monotonic()
 
     def chat(self, system: str, messages: list[Message], tools: list[ToolSpec]) -> LLMResponse:
+        self._pace()
         config = types.GenerateContentConfig(
             system_instruction=system,
             tools=[
