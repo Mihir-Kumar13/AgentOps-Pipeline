@@ -1,8 +1,8 @@
 # Progress
 
-**Current phase:** Phase 1 — built, waiting for owner review
-**Branch:** `phase-1-agent-eval`, stacked on `phase-0-repo-setup`. Nothing is pushed or merged yet.
-**Next phase:** Phase 2 (starts only after review)
+**Current phase:** Phase 1 — reviewed 2026-11-01, PRs open (waiting to merge)
+**Branches:** `main` (initial commit), `phase-0-repo-setup` → PR into `main`, `phase-1-agent-eval` → PR stacked on `phase-0-repo-setup`.
+**Next phase:** Phase 2 (starts after the PRs merge)
 
 ## Key settings (see docs/DECISIONS.md)
 | Setting | Value |
@@ -282,7 +282,7 @@ The cost estimate was too low: gpt-5-nano used about 3,150 output (mostly reason
 - **Infra errors count as quality failures.** A 429 makes the run `status=error`, which scores as low quality. Phase 6 must separate these, or the gate will block PRs because of rate limits.
 - **The timeout is checked between steps only** (ADR-006).
 - **`anthropic` and `bedrock` providers are not built** (ADR-005). CLAUDE.md still names Anthropic as the default.
-- **Nothing is pushed.** Branches `phase-0-repo-setup` → `phase-1-agent-eval` are local only.
+- **Pushed 2026-11-01** after the pre-push review: 49 tests pass, lint passes, gitleaks clean on the full history, no `.env` or keys tracked.
 
 ---
 
