@@ -1,8 +1,8 @@
 # Progress
 
-**Current phase:** Phase 1 — reviewed 2026-11-01, pushed
+**Current phase:** Phase 1 — complete 2026-11-01 (all acceptance checks met), on `main`
 **Branches:** `main` (initial commit), `phase-0-repo-setup`, `phase-1-agent-eval` (all pushed to `origin`). No PRs: the owner pushes directly to their own repo (ADR-003).
-**Next phase:** Phase 2 (starts after owner review)
+**Next phase:** Phase 2 (not started; starts when the owner says go)
 
 ## Key settings (see docs/DECISIONS.md)
 | Setting | Value |
@@ -14,7 +14,7 @@
 
 ## Phase checklist
 - [x] Phase 0: Repo setup and ground rules (owner moved on to Phase 1 on 2026-10-31)
-- [x] Phase 1: Agent + mock tools + eval harness (pending review; gpt-5-nano 17/20 pass on all 20 scenarios)
+- [x] Phase 1: Agent + mock tools + eval harness (complete 2026-11-01; gpt-5-nano 17/20 on all 20 scenarios)
 - [ ] Phase 2: Observability, local first
 - [ ] Phase 3: AWS foundation with Terraform
 - [ ] Phase 4: Deploy agent and observability stack on EKS
