@@ -14,7 +14,7 @@
 
 ## Phase checklist
 - [x] Phase 0: Repo setup and ground rules (owner moved on to Phase 1 on 2026-10-31)
-- [x] Phase 1: Agent + mock tools + eval harness (pending review; real-model run covers 5 of 20 scenarios)
+- [x] Phase 1: Agent + mock tools + eval harness (pending review; full Gemini run has 11 of 20 answered, 9 blocked by Google 503s)
 - [ ] Phase 2: Observability, local first
 - [ ] Phase 3: AWS foundation with Terraform
 - [ ] Phase 4: Deploy agent and observability stack on EKS
@@ -185,8 +185,25 @@ statuses         : {'ok': 1}
 
 **Extra check: compose stack.** `docker compose up --build --wait` brought both containers up healthy. `POST /triage` for `ALR-db-01` returned `status=ok`, `P2 / db_saturation`, ticket `TCK-ALR-db-01`. Running the mock eval against the containerised mock-tools (`MOCK_TOOLS_URL`) gave 8/8 `ok`. Images run as uid 10001 and contain no `.env`.
 
+**5. Full 20-scenario Gemini run (2026-10-31, owner-approved, free tier).** Saved to `results/phase1-gemini-full.json`.
+```
+$ LLM_MAX_RPM=12 EVAL_MAX_USD=0.10 LLM_PROVIDER=gemini uv run python -m evals.runner --n 1 --split all --out results/phase1-gemini-full.json
+statuses         : {'ok': 11, 'error': 9}
+cost             : $0.022016 total (70650 in / 2902 out tokens)   # paid-tier equivalent; billed $0
+wall clock       : 662.76s
+```
+| Result | Scenarios |
+|---|---|
+| Completed and passed (10) | oom-01..03, deploy-01..03, db-01, db-02, dep-01, dep-02 |
+| Completed and failed (1) | **db-03**: correct P3 / db_saturation, but it called `create_ticket`, which the prompt forbids for P3. This is a real quality miss. |
+| API error, no answer (9) | dep-03, fa-01..03, adv-01..05. 8 got Google `503 UNAVAILABLE` ("model is currently experiencing high demand") and 1 got `504 DEADLINE_EXCEEDED`. |
+
+**On completed runs: 10 of 11 passed.** The overall table (quality 0.713, safety 0.0) counts the 9 server errors as failures, so it does not measure model quality.
+
+**Re-run of the 9 errored scenarios: not completed.** First the retries were raised to 5 attempts with 4→30 s backoff. A re-run on 2026-10-31 still got `503 UNAVAILABLE` on dep-03 and fa-01, even after about 1 minute of retries per call, so it was stopped. A single dep-03 check gave the same 503. Billed $0. Next step: re-run the same 9 ids when Google's load drops (or on another model, see owner decision).
+
 ### Left / risky
-- **The real baseline is small:** 5 of 20 scenarios, N=1. A full run is 20 × N=1, about 80–100 calls (about 8 min at `LLM_MAX_RPM=12`, $0 on the free tier). Free-tier daily quotas apply.
+- **The real baseline is incomplete:** the full run has answers for 11 of 20 scenarios. The other 9 hit Google 503 overload and are still to be re-run. The committed `phase1-baseline.json` covers 5 scenarios. A full run is 20 × N=1, about 80–100 calls (about 8 min at `LLM_MAX_RPM=12`, $0 on the free tier). Free-tier daily quotas apply.
 - **Free-tier latency is not real:** p50 18 s includes 429 retries and pacing. Do not use it as a gate baseline (ADR-005).
 - **The mock scores 0.99:** the dataset is easy to split by keywords. When growing to 40–50 scenarios, add harder cases: overlapping signals, near-threshold severities, misleading keywords.
 - **Infra errors count as quality failures.** A 429 makes the run `status=error`, which scores as low quality. Phase 6 must separate these, or the gate will block PRs because of rate limits.
