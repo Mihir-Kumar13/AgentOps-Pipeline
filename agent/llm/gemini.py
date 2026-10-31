@@ -23,8 +23,9 @@ class GeminiLLM:
             http_options=types.HttpOptions(
                 timeout=int(timeout_s * 1000),  # milliseconds
                 # The SDK does not retry unless asked. Retry rate limits (429) and
-                # transient 5xx with backoff; failed requests are not billed.
-                retry_options=types.HttpRetryOptions(attempts=4, initial_delay=2.0, max_delay=20.0),
+                # transient 5xx with backoff; failed requests are not billed. Waits of
+                # ~4+8+16+30 s ride out short "model overloaded" 503 spikes.
+                retry_options=types.HttpRetryOptions(attempts=5, initial_delay=4.0, max_delay=30.0),
             ),
         )
         # Optional client-side pacing for free-tier keys (for example LLM_MAX_RPM=12 under a
