@@ -1,0 +1,51 @@
+# OTel Collector: one entry point for all agent telemetry.
+#   traces  -> Tempo, and -> spanmetrics (per-span call counts and latency)
+#   metrics -> Prometheus scrape endpoint :8889 (agent metrics + spanmetrics)
+#   logs    -> Loki (native OTLP endpoint)
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+  batch: {}
+
+connectors:
+  span_metrics:
+    histogram:
+      explicit:
+        buckets: [100ms, 250ms, 500ms, 1s, 2s, 5s, 10s, 20s, 30s, 60s]
+    dimensions:
+      - name: app.agent.release
+      - name: gen_ai.request.model
+
+exporters:
+  otlp_grpc/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  prometheus:
+    endpoint: 0.0.0.0:8889
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_grpc/tempo, span_metrics]
+    metrics:
+      receivers: [otlp, span_metrics]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/loki]

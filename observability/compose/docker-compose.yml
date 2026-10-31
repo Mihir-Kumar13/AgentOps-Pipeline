@@ -1,0 +1,56 @@
+# Local observability stack. Used together with the root docker-compose.yml:
+#   docker compose -f docker-compose.yml -f observability/compose/docker-compose.yml up
+# With several -f files, relative paths resolve from the FIRST file's folder (repo root).
+# All ports bind to 127.0.0.1: reachable from this laptop only.
+services:
+  agent:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      AGENT_RELEASE: ${AGENT_RELEASE:-stable}
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.164.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./observability/compose/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"   # OTLP gRPC
+      - "127.0.0.1:4318:4318"   # OTLP HTTP (the eval runner on the host sends here)
+    depends_on: [tempo, loki]
+
+  tempo:
+    image: grafana/tempo:2.10.10
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./observability/compose/tempo.yaml:/etc/tempo/tempo.yaml:ro
+
+  loki:
+    # Default config in the image: local filesystem, OTLP ingestion at /otlp.
+    image: grafana/loki:3.7.9
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    volumes:
+      - ./observability/compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts/agent-rules.yml:/etc/prometheus/rules/agent-rules.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    environment:
+      # Local-only convenience: no login, anonymous Editor (can use Explore).
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Editor
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/agent.json
+    volumes:
+      - ./observability/compose/grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./observability/compose/grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./observability/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on: [prometheus, tempo, loki]
