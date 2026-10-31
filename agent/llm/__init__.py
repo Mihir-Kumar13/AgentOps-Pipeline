@@ -13,4 +13,10 @@ def get_llm(settings: Settings) -> LLMClient:
         from agent.llm.gemini import GeminiLLM
 
         return GeminiLLM(model=settings.llm_model)
-    raise ValueError(f"unknown LLM_PROVIDER {settings.llm_provider!r} (supported: mock, gemini)")
+    if settings.llm_provider == "openai":
+        from agent.llm.openai_provider import OpenAILLM
+
+        return OpenAILLM(model=settings.llm_model)
+    raise ValueError(
+        f"unknown LLM_PROVIDER {settings.llm_provider!r} (supported: mock, gemini, openai)"
+    )

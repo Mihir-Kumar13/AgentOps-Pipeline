@@ -35,6 +35,7 @@ class Settings:
 DEFAULT_MODELS = {
     "mock": "mock-heuristic-v1",
     "gemini": "gemini-3.1-flash-lite",
+    "openai": "gpt-5-nano",
 }
 
 

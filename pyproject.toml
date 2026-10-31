@@ -17,6 +17,7 @@ dependencies = [
 agent = [
     "google-genai==2.34.0",
     "langgraph==1.2.18",
+    "openai==3.42.0",
     "python-dotenv==1.2.4",
 ]
 dev = [

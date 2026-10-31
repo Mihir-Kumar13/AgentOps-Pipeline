@@ -2,12 +2,12 @@
 
 import json
 import os
-import time
 
 from google import genai
 from google.genai import types
 
 from agent.llm.base import LLMResponse, Message, ToolCall, ToolSpec
+from agent.llm.pacing import Pacer
 
 
 class GeminiLLM:
@@ -28,21 +28,10 @@ class GeminiLLM:
                 retry_options=types.HttpRetryOptions(attempts=5, initial_delay=4.0, max_delay=30.0),
             ),
         )
-        # Optional client-side pacing for free-tier keys (for example LLM_MAX_RPM=12 under a
-        # 15/min quota). The wait is part of measured latency, so leave it unset for runs
-        # whose latency numbers matter.
-        rpm = float(os.getenv("LLM_MAX_RPM") or 0)
-        self._min_interval_s = 60.0 / rpm if rpm > 0 else 0.0
-        self._last_call = float("-inf")
-
-    def _pace(self) -> None:
-        wait = self._last_call + self._min_interval_s - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        self._last_call = time.monotonic()
+        self._pacer = Pacer()
 
     def chat(self, system: str, messages: list[Message], tools: list[ToolSpec]) -> LLMResponse:
-        self._pace()
+        self._pacer.wait()
         config = types.GenerateContentConfig(
             system_instruction=system,
             tools=[

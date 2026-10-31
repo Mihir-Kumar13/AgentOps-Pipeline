@@ -1,8 +1,10 @@
 """USD prices per 1M tokens, used to compute `cost_usd` per run.
 
-Source: https://ai.google.dev/gemini-api/docs/pricing (paid tier, standard, text),
-checked 2026-10-31. Output prices include thinking tokens. Re-check before trusting
-cost numbers; prices for some models change on 2027-01-01.
+Sources (standard tier, text, checked 2026-10-31):
+- Gemini: https://ai.google.dev/gemini-api/docs/pricing (paid tier). Some prices change 2027-01-01.
+- OpenAI: https://developers.openai.com/api/docs/pricing
+Output prices include thinking/reasoning tokens. Cached-input discounts are ignored, so
+costs here are slightly high (conservative). Re-check before trusting cost numbers.
 """
 
 PRICES_PER_M: dict[str, tuple[float, float]] = {
@@ -14,6 +16,10 @@ PRICES_PER_M: dict[str, tuple[float, float]] = {
     "gemini-2.5-flash-lite": (0.10, 0.40),
     "gemini-2.5-flash": (0.30, 2.50),
     "gemini-3.6-flash": (0.75, 3.75),
+    "gpt-5-nano": (0.05, 0.40),
+    "gpt-4.1-nano": (0.10, 0.40),
+    "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-5-mini": (0.25, 2.00),
 }
 
 

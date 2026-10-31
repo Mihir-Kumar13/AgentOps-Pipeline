@@ -1,13 +1,18 @@
-"""Provider wrapper tests. No network: Gemini is tested only on message conversion."""
+"""Provider wrapper tests. No network: real providers are tested only on message conversion."""
 
 import json
 
 import pytest
 from google.genai import types
+from openai.types.chat import ChatCompletion
 
 import agent.llm.gemini as gemini_mod
+import agent.llm.pacing as pacing_mod
 from agent.llm.base import Message, ToolCall
 from agent.llm.gemini import _from_response, _to_contents
+from agent.llm.openai_provider import OpenAILLM
+from agent.llm.openai_provider import _from_response as oa_from_response
+from agent.llm.openai_provider import _to_messages as oa_to_messages
 from agent.llm.pricing import cost_usd
 from agent.prompts import load_prompt
 
@@ -75,30 +80,106 @@ def test_gemini_response_parsing_skips_thoughts():
     assert msg.raw is resp.candidates[0].content
 
 
-def test_gemini_pacing_spaces_calls(monkeypatch):
-    # Fake key: creating the client makes no network call.
-    monkeypatch.setenv("GEMINI_API_KEY", "test-not-a-real-key")
-    monkeypatch.setenv("LLM_MAX_RPM", "12")
+def test_pacing_spaces_calls(monkeypatch):
     clock = {"now": 100.0}
     slept: list[float] = []
-    monkeypatch.setattr(gemini_mod.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(pacing_mod.time, "monotonic", lambda: clock["now"])
 
     def fake_sleep(s: float) -> None:
         slept.append(s)
         clock["now"] += s
 
-    monkeypatch.setattr(gemini_mod.time, "sleep", fake_sleep)
-    llm = gemini_mod.GeminiLLM(model="gemini-3.1-flash-lite")
-    llm._pace()  # first call: no wait
+    monkeypatch.setattr(pacing_mod.time, "sleep", fake_sleep)
+    monkeypatch.setenv("LLM_MAX_RPM", "12")
+    pacer = pacing_mod.Pacer()
+    pacer.wait()  # first call: no wait
     clock["now"] += 1.0
-    llm._pace()  # 60/12 = 5 s interval, 1 s already passed
+    pacer.wait()  # 60/12 = 5 s interval, 1 s already passed
     assert slept == [pytest.approx(4.0)]
 
 
-def test_gemini_no_pacing_by_default(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "test-not-a-real-key")
+def test_no_pacing_by_default(monkeypatch):
     monkeypatch.delenv("LLM_MAX_RPM", raising=False)
-    assert gemini_mod.GeminiLLM(model="m")._min_interval_s == 0.0
+    assert pacing_mod.Pacer().min_interval_s == 0.0
+
+
+def test_providers_build_without_network(monkeypatch):
+    # Fake keys: creating the clients makes no network call.
+    monkeypatch.setenv("GEMINI_API_KEY", "test-not-a-real-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-not-a-real-key")
+    assert gemini_mod.GeminiLLM(model="m").provider == "gemini"
+    assert OpenAILLM(model="gpt-5-nano").provider == "openai"
+
+
+def test_openai_missing_key_is_clear(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+        OpenAILLM(model="gpt-5-nano")
+
+
+def test_openai_message_conversion():
+    messages = [
+        Message(role="user", content="alert"),
+        Message(role="assistant", tool_calls=[ToolCall("call_1", "get_logs", {"q": "x"})]),
+        Message(role="tool", content='{"lines": []}', tool_call_id="call_1", name="get_logs"),
+    ]
+    out = oa_to_messages("SYSTEM", messages)
+    assert [m["role"] for m in out] == ["system", "user", "assistant", "tool"]
+    assert out[0]["content"] == "SYSTEM"
+    call = out[2]["tool_calls"][0]
+    assert call["id"] == "call_1"
+    assert json.loads(call["function"]["arguments"]) == {"q": "x"}
+    assert out[2]["content"] is None
+    assert out[3] == {"role": "tool", "tool_call_id": "call_1", "content": '{"lines": []}'}
+
+
+def _completion(message: dict, usage: dict | None = None) -> ChatCompletion:
+    return ChatCompletion.model_validate(
+        {
+            "id": "x",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "gpt-5-nano",
+            "choices": [{"index": 0, "finish_reason": "stop", "message": message}],
+            "usage": usage,
+        }
+    )
+
+
+def test_openai_response_with_tool_calls():
+    resp = _completion(
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_9",
+                    "type": "function",
+                    "function": {"name": "get_metrics", "arguments": '{"service": "a"}'},
+                },
+                {
+                    "id": "call_10",
+                    "type": "function",
+                    "function": {"name": "get_logs", "arguments": "{not json"},
+                },
+            ],
+        }
+    )
+    msg = oa_from_response(resp)
+    assert msg.content == ""
+    assert [(c.id, c.name) for c in msg.tool_calls] == [
+        ("call_9", "get_metrics"),
+        ("call_10", "get_logs"),
+    ]
+    assert msg.tool_calls[0].args == {"service": "a"}
+    # Broken JSON args are kept so mock-tools rejects them as a tool error.
+    assert msg.tool_calls[1].args == {"_unparsed_arguments": "{not json"}
+
+
+def test_openai_text_response():
+    msg = oa_from_response(_completion({"role": "assistant", "content": '{"a": 1}'}))
+    assert msg.content == '{"a": 1}'
+    assert msg.tool_calls == []
 
 
 def test_gemini_empty_response_becomes_empty_message():
