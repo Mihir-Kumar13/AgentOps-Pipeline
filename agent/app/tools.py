@@ -3,6 +3,7 @@
 from typing import Any
 
 import httpx
+from opentelemetry.propagate import inject
 
 from agent.llm.base import ToolSpec
 
@@ -75,9 +76,10 @@ class ToolClient:
     def call(self, name: str, args: dict[str, Any]) -> tuple[Any, str | None]:
         """Return (result, error). Errors are returned, not raised, so the LLM can react."""
         try:
-            resp = self._http.post(
-                f"/tools/{name}", json=args, headers={"X-Alert-Id": self._alert_id}
-            )
+            headers = {"X-Alert-Id": self._alert_id}
+            # W3C traceparent: the mock-tools request joins this run's trace.
+            inject(headers)
+            resp = self._http.post(f"/tools/{name}", json=args, headers=headers)
         except httpx.HTTPError as exc:
             return None, f"tool transport error: {type(exc).__name__}"
         if resp.status_code != 200:

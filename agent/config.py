@@ -30,6 +30,7 @@ class Settings:
     llm_model: str
     mock_tools_url: str
     limits: Limits
+    release: str
 
 
 DEFAULT_MODELS = {
@@ -46,4 +47,5 @@ def load_settings() -> Settings:
         llm_model=os.getenv("LLM_MODEL") or DEFAULT_MODELS.get(provider, ""),
         mock_tools_url=os.getenv("MOCK_TOOLS_URL", "http://localhost:8081"),
         limits=Limits(),
+        release=os.getenv("AGENT_RELEASE", "stable"),
     )

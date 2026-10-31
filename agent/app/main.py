@@ -11,6 +11,7 @@ from agent.app.tools import ToolClient
 from agent.config import load_settings
 from agent.llm import get_llm
 from agent.prompts import load_prompt
+from agent.telemetry import setup_telemetry
 
 settings = load_settings()
 state: dict = {}
@@ -18,7 +19,10 @@ state: dict = {}
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    state["agent"] = TriageAgent(get_llm(settings), load_prompt(), settings.limits)
+    setup_telemetry()
+    state["agent"] = TriageAgent(
+        get_llm(settings), load_prompt(), settings.limits, release=settings.release
+    )
     state["http"] = httpx.Client(base_url=settings.mock_tools_url, timeout=10.0)
     yield
     state["http"].close()

@@ -27,6 +27,7 @@ from agent.app.tools import ToolClient
 from agent.config import REPO_ROOT, load_settings
 from agent.llm import get_llm
 from agent.prompts import load_prompt
+from agent.telemetry import setup_telemetry
 from evals.scorers.deterministic import score_run
 
 DATASET = REPO_ROOT / "evals/dataset/scenarios.jsonl"
@@ -128,7 +129,8 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings()
     max_usd = float(os.getenv("EVAL_MAX_USD", "1.00"))
     prompt = load_prompt()
-    agent = TriageAgent(get_llm(settings), prompt, settings.limits)
+    telemetry = setup_telemetry()
+    agent = TriageAgent(get_llm(settings), prompt, settings.limits, release=settings.release)
     scenarios = load_scenarios(args.split, args.ids)
     meta = {
         "provider": settings.llm_provider,
@@ -138,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
         "split": args.split,
         "scenarios": len(scenarios),
         "eval_max_usd": max_usd,
+        "release": settings.release,
+        "telemetry": telemetry,
         "started_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
 

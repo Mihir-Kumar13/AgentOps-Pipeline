@@ -11,6 +11,9 @@ Limits (CLAUDE.md section 5) are enforced here, not in the prompt:
   A replan is any turn the model must redo: invalid final JSON, an empty reply,
   an unknown tool, or a duplicate call (same tool + same args = a loop).
 - timeout: checked before every step, the run stops with status "timeout".
+
+Every run is traced (agent/telemetry/spans.py); the spans are no-ops unless
+telemetry is enabled.
 """
 
 import json
@@ -27,6 +30,7 @@ from agent.config import Limits
 from agent.llm.base import LLMClient, Message
 from agent.llm.pricing import cost_usd
 from agent.prompts import Prompt
+from agent.telemetry.spans import chat_span, finish_run, mark_error, run_span, tool_span
 
 RUNNING = "running"
 
@@ -65,15 +69,25 @@ class AgentState(TypedDict):
 
 
 class TriageAgent:
-    def __init__(self, llm: LLMClient, prompt: Prompt, limits: Limits):
+    def __init__(self, llm: LLMClient, prompt: Prompt, limits: Limits, release: str = "stable"):
         self.llm = llm
         self.prompt = prompt
         self.limits = limits
+        # stable | canary: labels all telemetry so canary analysis can compare the two.
+        self.release = release
 
     def run(self, alert: Alert, tools: ToolClient) -> RunResult:
+        with run_span(
+            alert.alert_id, self.llm.provider, self.llm.model, self.prompt.version, self.release
+        ) as (span, ctx):
+            result = self._run(alert, tools, ctx)
+            finish_run(span, result, self.release)
+        return result
+
+    def _run(self, alert: Alert, tools: ToolClient, ctx) -> RunResult:
         start = time.monotonic()
         deadline = start + self.limits.timeout_s
-        graph = self._build(tools, deadline)
+        graph = self._build(tools, deadline, ctx)
         first = Message(
             role="user",
             content="Triage this alert.\n\nAlert:\n" + json.dumps(alert.model_dump()),
@@ -109,16 +123,26 @@ class TriageAgent:
             error=state["error"],
         )
 
-    def _build(self, tools: ToolClient, deadline: float):
+    def _build(self, tools: ToolClient, deadline: float, ctx):
         limits = self.limits
+        llm = self.llm
 
         def llm_node(state: AgentState) -> dict:
             if time.monotonic() > deadline:
                 return {"status": "timeout"}
-            try:
-                resp = self.llm.chat(self.prompt.text, state["messages"], TOOL_SPECS)
-            except Exception as exc:  # provider/network failure ends the run, never crashes it
-                return {"status": "error", "error": f"{type(exc).__name__}: {exc}"[:500]}
+            with chat_span(ctx, llm.provider, llm.model) as span:
+                try:
+                    resp = llm.chat(self.prompt.text, state["messages"], TOOL_SPECS)
+                except Exception as exc:  # provider/network failure ends the run, never crashes
+                    span.record_exception(exc)
+                    mark_error(span, type(exc).__name__, str(exc))
+                    return {"status": "error", "error": f"{type(exc).__name__}: {exc}"[:500]}
+                span.set_attributes(
+                    {
+                        "gen_ai.usage.input_tokens": resp.input_tokens,
+                        "gen_ai.usage.output_tokens": resp.output_tokens,
+                    }
+                )
             return {
                 "messages": state["messages"] + [resp.message],
                 "input_tokens": state["input_tokens"] + resp.input_tokens,
@@ -135,18 +159,30 @@ class TriageAgent:
             errors, replans = state["tool_errors"], state["replans"]
             for call in calls:
                 key = (call.name, json.dumps(call.args, sort_keys=True))
-                entry = {"name": call.name, "args": call.args, "error": None, "duplicate": False}
-                if call.name not in TOOL_NAMES:
-                    result, entry["error"] = None, f"unknown tool {call.name!r}"
-                    replans += 1
-                elif key in seen:
-                    result, entry["duplicate"] = None, True
-                    entry["error"] = "duplicate call: you already have this result"
-                    replans += 1
-                else:
-                    result, entry["error"] = tools.call(call.name, call.args)
-                    if entry["error"]:
-                        errors += 1
+                entry = {
+                    "name": call.name,
+                    "args": call.args,
+                    "error": None,
+                    "error_type": None,  # tool_error | unknown_tool | duplicate_call
+                    "duplicate": False,
+                }
+                with tool_span(ctx, call.name, call.id) as span:
+                    if call.name not in TOOL_NAMES:
+                        result, entry["error"] = None, f"unknown tool {call.name!r}"
+                        entry["error_type"] = "unknown_tool"
+                        replans += 1
+                    elif key in seen:
+                        result, entry["duplicate"] = None, True
+                        entry["error"] = "duplicate call: you already have this result"
+                        entry["error_type"] = "duplicate_call"
+                        replans += 1
+                    else:
+                        result, entry["error"] = tools.call(call.name, call.args)
+                        if entry["error"]:
+                            entry["error_type"] = "tool_error"
+                            errors += 1
+                    if entry["error_type"]:
+                        mark_error(span, entry["error_type"], entry["error"])
                 seen.add(key)
                 log.append(entry)
                 payload = {"error": entry["error"]} if entry["error"] else result
