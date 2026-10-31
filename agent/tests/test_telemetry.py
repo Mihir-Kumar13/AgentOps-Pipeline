@@ -138,6 +138,7 @@ def test_tool_error_marks_span_and_counts_metric(tools_http):
     assert span.status.status_code == StatusCode.ERROR
     assert span.attributes["error.type"] == "tool_error"
     assert counter_value("agent_tool_errors", tool="get_metrics") == before + 1
+    assert counter_value("agent_tool_calls", tool="get_metrics") >= 1
 
 
 def test_duplicate_call_is_not_a_tool_error(tools_http):

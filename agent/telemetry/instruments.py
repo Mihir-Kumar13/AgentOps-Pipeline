@@ -22,6 +22,7 @@ run_cost = meter.create_histogram("agent_run_cost_usd", description="Cost of one
 run_duration = meter.create_histogram(
     "agent_run_duration_seconds", description="Wall-clock time of one run"
 )
+tool_calls = meter.create_counter("agent_tool_calls", description="Tool calls by tool")
 tool_errors = meter.create_counter("agent_tool_errors", description="Failed tool calls by tool")
 loops = meter.create_counter(
     "agent_loops", description="Runs stopped by the tool-call or replan limit"

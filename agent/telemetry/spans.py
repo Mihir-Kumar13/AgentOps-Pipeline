@@ -75,6 +75,28 @@ def tool_span(ctx: otel_context.Context, tool: str, call_id: str):
         yield span
 
 
+RUN_STATUSES = ("ok", "invalid_output", "tool_limit", "replan_limit", "timeout", "error")
+
+
+def init_series(release: str, model: str, prompt_version: str, tools: list[str]) -> None:
+    """Create every counter series at 0 when the agent starts.
+
+    Prometheus cannot see the first increment of a series it has never scraped, so
+    without this the dashboards and alerts would undercount each new process.
+    """
+    labels = {"release": release}
+    for status in RUN_STATUSES:
+        ins.runs.add(
+            0, {**labels, "status": status, "prompt_version": prompt_version, "model": model}
+        )
+    for valid in ("true", "false"):
+        ins.output_valid.add(0, {**labels, "valid": valid})
+    ins.loops.add(0, labels)
+    for tool in tools:
+        ins.tool_calls.add(0, {**labels, "tool": tool})
+        ins.tool_errors.add(0, {**labels, "tool": tool})
+
+
 def mark_error(span: trace.Span, error_type: str, message: str = "") -> None:
     span.set_attribute("error.type", error_type)
     span.set_status(Status(StatusCode.ERROR, message[:200]))
@@ -111,6 +133,7 @@ def finish_run(span: trace.Span, result: "RunResult", release: str) -> None:
     if result.status in LOOP_STATUSES:
         ins.loops.add(1, labels)
     for call in result.tool_calls:
+        ins.tool_calls.add(1, {**labels, "tool": call["name"]})
         # Loops (duplicate calls) and unknown tools are model mistakes, not tool failures.
         if call.get("error_type") == "tool_error":
             ins.tool_errors.add(1, {**labels, "tool": call["name"]})

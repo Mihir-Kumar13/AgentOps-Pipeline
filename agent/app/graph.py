@@ -30,7 +30,14 @@ from agent.config import Limits
 from agent.llm.base import LLMClient, Message
 from agent.llm.pricing import cost_usd
 from agent.prompts import Prompt
-from agent.telemetry.spans import chat_span, finish_run, mark_error, run_span, tool_span
+from agent.telemetry.spans import (
+    chat_span,
+    finish_run,
+    init_series,
+    mark_error,
+    run_span,
+    tool_span,
+)
 
 RUNNING = "running"
 
@@ -75,6 +82,7 @@ class TriageAgent:
         self.limits = limits
         # stable | canary: labels all telemetry so canary analysis can compare the two.
         self.release = release
+        init_series(release, llm.model, prompt.version, sorted(TOOL_NAMES))
 
     def run(self, alert: Alert, tools: ToolClient) -> RunResult:
         with run_span(
