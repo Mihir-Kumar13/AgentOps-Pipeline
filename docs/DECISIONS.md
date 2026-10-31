@@ -52,3 +52,11 @@ Each entry: what we decided, why, and what it affects. Newest last.
 - **Decision:** Each scenario's `mock_data` is served for its `alert_id`. The agent sends the alert id in an `X-Alert-Id` header, not as a tool argument, so the LLM never sees or controls which data it gets.
 - **Evals:** `evals/runner.py` mounts the mock-tools FastAPI app in-process (no server, no network). Setting `MOCK_TOOLS_URL` makes it use a running server instead (for example the compose stack).
 - **Why:** `make eval` is fast and self-contained, and the same app code serves both modes.
+
+## ADR-008: Add an `openai` provider; default model `gpt-5-nano`
+- **Date:** 2026-10-31 (Phase 1)
+- **Decision:** `LLM_PROVIDER=openai` uses the OpenAI Chat Completions API (`openai==3.42.0`, `agent/llm/openai_provider.py`). The key comes from `OPENAI_API_KEY`. The default model is `gpt-5-nano` ($0.05 / $0.40 per 1M tokens in / out, checked 2026-10-31).
+- **Why:** Gemini's free tier kept returning `503 "high demand"`, so a complete 20-scenario result was impossible. A cheap paid model gives a complete, repeatable baseline for about $0.01–0.02 per 20 scenarios.
+- **Details:** the SDK retries 429/5xx (4 retries). Reasoning tokens are billed as output and are already inside `completion_tokens`. Cached-input discounts are ignored, so recorded costs are slightly high. The free-tier pacing (`LLM_MAX_RPM`) moved to the shared `agent/llm/pacing.py`.
+- **Rule:** one model per result. Answers from Gemini and OpenAI are never merged into one baseline.
+- **Affects later phases:** in Phase 4 the key moves to Secrets Manager, and NetworkPolicy egress must allow `api.openai.com`. CLAUDE.md still names Anthropic/Bedrock.

@@ -104,8 +104,9 @@ ruff and terraform fmt show "Skipped" because there are no `.py` or `.tf` files 
 | Variable | Meaning |
 |---|---|
 | `GEMINI_API_KEY` | Gemini key (`GOOGLE_API_KEY` also works) |
-| `LLM_PROVIDER` | `mock` (default) or `gemini` |
-| `LLM_MODEL` | optional, default `gemini-3.1-flash-lite` |
+| `OPENAI_API_KEY` | OpenAI key (ADR-008) |
+| `LLM_PROVIDER` | `mock` (default), `gemini` or `openai` |
+| `LLM_MODEL` | optional; defaults: `gemini-3.1-flash-lite`, `gpt-5-nano` |
 | `LLM_MAX_RPM` | optional pacing for free-tier keys, for example `12` |
 | `EVAL_MAX_USD` | eval spend cap at paid-tier prices, default `1.00` |
 | `MOCK_TOOLS_URL` | use a running mock-tools server instead of in-process |
@@ -201,6 +202,8 @@ wall clock       : 662.76s
 **On completed runs: 10 of 11 passed.** The overall table (quality 0.713, safety 0.0) counts the 9 server errors as failures, so it does not measure model quality.
 
 **Re-run of the 9 errored scenarios: not completed.** First the retries were raised to 5 attempts with 4→30 s backoff. A re-run on 2026-10-31 still got `503 UNAVAILABLE` on dep-03 and fa-01, even after about 1 minute of retries per call, so it was stopped. A single dep-03 check gave the same 503. Billed $0. Next step: re-run the same 9 ids when Google's load drops (or on another model, see owner decision).
+
+**6. OpenAI provider added (ADR-008); first run blocked by project permissions.** All 20 calls returned `403 PermissionDenied: Project ... does not have access to model gpt-5-nano`. 0 tokens were used and $0 was billed. Listing the key's models showed only `gpt-4o-mini`. The owner is enabling `gpt-5-nano` for the project in the OpenAI dashboard. The all-error result file was deleted (not a real baseline). Next step: re-run all 20 on `gpt-5-nano` (estimated $0.01–0.02, cap $0.10).
 
 ### Left / risky
 - **The real baseline is incomplete:** the full run has answers for 11 of 20 scenarios. The other 9 hit Google 503 overload and are still to be re-run. The committed `phase1-baseline.json` covers 5 scenarios. A full run is 20 × N=1, about 80–100 calls (about 8 min at `LLM_MAX_RPM=12`, $0 on the free tier). Free-tier daily quotas apply.
