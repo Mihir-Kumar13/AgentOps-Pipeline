@@ -1,0 +1,54 @@
+# Agent alert rules (CLAUDE.md section 7). Metric names: docs/METRICS.md.
+# Every rule is grouped by `release`, so stable and canary are judged separately.
+# Unit tests: observability/alerts/tests/agent-rules.test.yml (make alerts-test).
+groups:
+  - name: triage-agent
+    rules:
+      - alert: AgentCostPerRunSpike
+        expr: |
+          (
+            sum by (release) (rate(agent_run_cost_usd_sum[5m]))
+            / sum by (release) (rate(agent_run_cost_usd_count[5m]))
+          )
+          > 3 * (
+            sum by (release) (rate(agent_run_cost_usd_sum[1h]))
+            / sum by (release) (rate(agent_run_cost_usd_count[1h]))
+          )
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Cost per run is more than 3x the 1-hour baseline
+
+      - alert: AgentLoopRateHigh
+        expr: |
+          sum by (release) (rate(agent_loops_total[5m]))
+          / sum by (release) (rate(agent_runs_total[5m]))
+          > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 5% of runs hit the tool-call or replan limit
+
+      - alert: AgentToolErrorRateHigh
+        expr: |
+          sum by (release) (rate(agent_tool_errors_total[5m]))
+          / sum by (release) (rate(agent_tool_calls_total[5m]))
+          > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 5% of tool calls fail
+
+      - alert: AgentOutputInvalidHigh
+        expr: |
+          sum by (release) (rate(agent_output_valid_total{valid="false"}[5m]))
+          / sum by (release) (rate(agent_output_valid_total[5m]))
+          > 0.02
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than 2% of runs end without a schema-valid report

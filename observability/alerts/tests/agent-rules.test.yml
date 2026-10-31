@@ -1,0 +1,106 @@
+# promtool unit tests for agent-rules.yml. Run: make alerts-test
+# Each alert has one case that must fire and one healthy case that must not.
+# Series notation: 'a+bxn' = start at a, add b each minute, n more samples.
+rule_files:
+  - ../agent-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # --- cost per run spike ----------------------------------------------------------
+  - interval: 1m
+    input_series:
+      # 1 run/min. $0.001 per run for 60 min, then $0.02 per run.
+      - series: 'agent_run_cost_usd_count{release="stable"}'
+        values: '0+1x80'
+      - series: 'agent_run_cost_usd_sum{release="stable"}'
+        values: '0+0.001x60 0.08+0.02x19'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: AgentCostPerRunSpike
+        exp_alerts: []
+      - eval_time: 75m
+        alertname: AgentCostPerRunSpike
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              release: stable
+            exp_annotations:
+              summary: Cost per run is more than 3x the 1-hour baseline
+
+  # --- loop rate --------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'agent_runs_total{release="canary",status="ok"}'
+        values: '0+10x20'
+      - series: 'agent_loops_total{release="canary"}'
+        values: '0+1x20'        # 10% of runs loop
+      - series: 'agent_runs_total{release="stable",status="ok"}'
+        values: '0+10x20'
+      - series: 'agent_loops_total{release="stable"}'
+        values: '0+0x20'        # 0%
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AgentLoopRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              release: canary
+            exp_annotations:
+              summary: More than 5% of runs hit the tool-call or replan limit
+
+  # --- tool error rate ----------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'agent_tool_calls_total{release="stable",tool="get_logs"}'
+        values: '0+20x20'
+      - series: 'agent_tool_errors_total{release="stable",tool="get_logs"}'
+        values: '0+2x20'        # 10% fail
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AgentToolErrorRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              release: stable
+            exp_annotations:
+              summary: More than 5% of tool calls fail
+
+  - interval: 1m
+    input_series:
+      - series: 'agent_tool_calls_total{release="stable",tool="get_logs"}'
+        values: '0+100x20'
+      - series: 'agent_tool_errors_total{release="stable",tool="get_logs"}'
+        values: '0+1x20'        # 1% fail: healthy
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AgentToolErrorRateHigh
+        exp_alerts: []
+
+  # --- invalid output -------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'agent_output_valid_total{release="stable",valid="true"}'
+        values: '0+97x20'
+      - series: 'agent_output_valid_total{release="stable",valid="false"}'
+        values: '0+3x20'        # 3% invalid
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AgentOutputInvalidHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              release: stable
+            exp_annotations:
+              summary: More than 2% of runs end without a schema-valid report
+
+  - interval: 1m
+    input_series:
+      - series: 'agent_output_valid_total{release="stable",valid="true"}'
+        values: '0+99x20'
+      - series: 'agent_output_valid_total{release="stable",valid="false"}'
+        values: '0+1x20'        # 1% invalid: healthy
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AgentOutputInvalidHigh
+        exp_alerts: []
