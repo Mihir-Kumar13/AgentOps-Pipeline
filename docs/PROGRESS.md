@@ -1,8 +1,8 @@
 # Progress
 
-**Current phase:** Phase 1 — reviewed 2026-11-01, PRs open (waiting to merge)
-**Branches:** `main` (initial commit), `phase-0-repo-setup` → PR into `main`, `phase-1-agent-eval` → PR stacked on `phase-0-repo-setup`.
-**Next phase:** Phase 2 (starts after the PRs merge)
+**Current phase:** Phase 1 — reviewed 2026-11-01, pushed
+**Branches:** `main` (initial commit), `phase-0-repo-setup`, `phase-1-agent-eval` (all pushed to `origin`). No PRs: the owner pushes directly to their own repo (ADR-003).
+**Next phase:** Phase 2 (starts after owner review)
 
 ## Key settings (see docs/DECISIONS.md)
 | Setting | Value |

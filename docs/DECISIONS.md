@@ -26,6 +26,7 @@ Each entry: what we decided, why, and what it affects. Newest last.
 - **Decision:** The default branch is `main` (renamed from `master`). Each phase is built on its own branch (`phase-0-repo-setup`, `phase-1-...`) and merged through a PR.
 - **Why:** This matches CLAUDE.md section 9. Later, CI and branch protection hang off `main`.
 - **GitHub repo:** `Mihir-Kumar13/AgentOps-Pipeline`. The Phase 3 OIDC trust policy will be limited to this repo.
+- **Update 2026-11-01:** the owner does not use PRs. Branches are pushed directly to the owner's own repo. This differs from CLAUDE.md section 9 ("PRs into `main`"). The Phase 5/6 PR-based CI and eval gate will need a trigger decision when we get there.
 
 ## ADR-004: Python deps managed with uv; code runs from the repo root
 - **Date:** 2026-10-31 (Phase 1)
