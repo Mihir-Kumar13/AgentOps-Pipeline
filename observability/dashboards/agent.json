@@ -426,7 +426,8 @@
             "lineWidth": 2,
             "fillOpacity": 10,
             "spanNulls": true
-          }
+          },
+          "min": 0
         },
         "overrides": []
       },
@@ -473,7 +474,8 @@
             "lineWidth": 2,
             "fillOpacity": 10,
             "spanNulls": true
-          }
+          },
+          "min": 0
         },
         "overrides": []
       },
@@ -509,7 +511,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (release) (rate(agent_run_cost_usd_sum{release=~\"$release\"}[$__rate_interval])) / sum by (release) (rate(agent_run_cost_usd_count{release=~\"$release\"}[$__rate_interval]))",
+          "expr": "sum by (release) (rate(agent_run_cost_usd_sum{release=~\"$release\"}[$__rate_interval])) / (sum by (release) (rate(agent_run_cost_usd_count{release=~\"$release\"}[$__rate_interval])) > 0)",
           "legendFormat": "{{release}}"
         }
       ],
@@ -612,7 +614,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(agent_output_valid_total{release=~\"$release\",valid=\"false\"}[$__rate_interval])) / sum(rate(agent_output_valid_total{release=~\"$release\"}[$__rate_interval]))",
+          "expr": "sum(rate(agent_output_valid_total{release=~\"$release\",valid=\"false\"}[$__rate_interval])) / (sum(rate(agent_output_valid_total{release=~\"$release\"}[$__rate_interval])) > 0)",
           "legendFormat": "invalid"
         }
       ],
@@ -623,7 +625,9 @@
             "lineWidth": 2,
             "fillOpacity": 10,
             "spanNulls": true
-          }
+          },
+          "min": 0,
+          "max": 1
         },
         "overrides": []
       },
@@ -679,7 +683,8 @@
             "lineWidth": 2,
             "fillOpacity": 10,
             "spanNulls": true
-          }
+          },
+          "min": 0
         },
         "overrides": []
       },
