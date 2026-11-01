@@ -1,8 +1,8 @@
 # Progress
 
-**Current phase:** Phase 1 — complete 2026-11-01 (all acceptance checks met), on `main`
-**Branches:** `main` (initial commit), `phase-0-repo-setup`, `phase-1-agent-eval` (all pushed to `origin`). No PRs: the owner pushes directly to their own repo (ADR-003).
-**Next phase:** Phase 2 (not started; starts when the owner says go)
+**Current phase:** Phase 2 — complete 2026-11-01 (all acceptance checks met), on `main`
+**Branches:** `main`, plus `phase-0-repo-setup`, `phase-1-agent-eval`, `phase-2-observability`. No PRs: each phase branch is fast-forwarded into `main` when complete (ADR-003).
+**Next phase:** Phase 3, AWS foundation (not started; it costs money, so plan and estimate first)
 
 ## Key settings (see docs/DECISIONS.md)
 | Setting | Value |
@@ -15,7 +15,7 @@
 ## Phase checklist
 - [x] Phase 0: Repo setup and ground rules (owner moved on to Phase 1 on 2026-10-31)
 - [x] Phase 1: Agent + mock tools + eval harness (complete 2026-11-01; gpt-5-nano 17/20 on all 20 scenarios)
-- [ ] Phase 2: Observability, local first
+- [x] Phase 2: Observability, local first (complete 2026-11-01)
 - [ ] Phase 3: AWS foundation with Terraform
 - [ ] Phase 4: Deploy agent and observability stack on EKS
 - [ ] Phase 5: CI pipeline (build, test, push) with OIDC
@@ -284,11 +284,68 @@ The cost estimate was too low: gpt-5-nano used about 3,150 output (mostly reason
 - **`anthropic` and `bedrock` providers are not built** (ADR-005). CLAUDE.md still names Anthropic as the default.
 - **Pushed 2026-11-01** after the pre-push review: 49 tests pass, lint passes, gitleaks clean on the full history, no `.env` or keys tracked.
 
+## Phase 2: Observability, local first
+
+### Tasks
+- [x] OTel SDK in the agent (`agent/telemetry/`): `invoke_agent → chat → execute_tool` spans, GenAI and `app.*` attributes, cost per run. Off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set
+- [x] The 6 contract metrics plus `agent_tool_calls_total`, sent directly with exact names; counters start at 0
+- [x] W3C `traceparent` propagation, so mock-tools HTTP spans join the run trace
+- [x] Compose stack (`make obs-up` / `make obs-down`): OTel Collector 0.164.0, Tempo 2.10.10, Prometheus v3.15.1, Loki 3.7.9, Grafana 13.3.0, all bound to 127.0.0.1
+- [x] Collector: traces → Tempo and span_metrics; metrics → Prometheus; logs → Loki (OTLP)
+- [x] Provisioned Grafana: data sources with trace↔log links, and the "Triage Agent" dashboard (16 panels)
+- [x] 4 alert rules plus 7 promtool test cases (`make alerts-test`)
+- [x] `docs/METRICS.md` (the contract) and ADR-009 (design choices)
+- [x] 9 new telemetry unit tests (58 total)
+
+### Acceptance check (real output, 2026-11-01)
+
+**1. Run 10 scenarios with telemetry and screenshot a trace showing `invoke_agent → chat → execute_tool`.**
+```
+$ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 LLM_PROVIDER=openai LLM_MODEL=gpt-5-nano EVAL_MAX_USD=0.05 uv run python -m evals.runner --n 1 --ids oom-01 oom-02 deploy-01 deploy-03 db-01 dep-01 fa-01 fa-03 adv-01 adv-05 --out results/phase2-otel-run.json
+provider=openai model=gpt-5-nano prompt=triage-v1 N=1 split=all
+OVERALL                 10     0.912    0.60
+safety pass rate : 1.0
+cost             : $0.014271 total, $0.001427/run (37330 in / 31011 out tokens)
+latency          : p50 16.883s, p95 54.256s
+statuses         : {'ok': 10}
+wall clock       : 225.52s
+exit code: 0
+```
+Screenshot of trace `55a8eecac2288c2f92fd95ac05c7fe6b` (adv-01, the prompt-injection case, 34 spans): `invoke_agent triage-agent` (13.6 s) → `chat gpt-5-nano` (4.78 s) → `execute_tool get_metrics` (13.6 ms) → `POST /tools/get_metrics` → …
+
+![trace](img/phase2-trace.png)
+
+**2. `promtool test rules` passes.**
+```
+$ make alerts-test
+Checking /alerts/agent-rules.yml
+  SUCCESS: 4 rules found
+
+  SUCCESS
+exit code: 0
+```
+![alerts](img/phase2-alerts.png)
+
+**3. The dashboard shows data.** Screenshots are in `docs/img/`.
+
+![dashboard](img/phase2-dashboard.png)
+
+**Also checked:**
+- Each Loki log line carries `trace_id`, linking to its Tempo trace.
+- Prometheus has all `agent_*` metric names from METRICS.md.
+- `make test` → 58 passed.
+
+### Left / risky
+- **The host clock jumped about 7.6 h forward during the run** (machine sleep or time sync). The first 3 runs (oom-01, oom-02, deploy-01) are timestamped Oct 31 22:4x, so the dashboard's "last 25 min" shows 7 runs, not 10. deploy-03 spans the jump, so its trace duration is nonsense and it drives the 57 s p95 tile. Run timings in the results JSON use a clock that is not affected by the jump.
+- **The score varied between runs:** this time 6/10 passed; in the 20-scenario run 17/20 passed. deploy-03 and fa-01 flipped with no change at all. This is why the Phase 6 gate needs N=3 and a statistical test.
+- **span_metrics arrive about 30 s late** (the connector's own flush interval). Only the step-latency panel uses them.
+- **Noise:** `GET /healthz` traces from the agent container's health check (filtered out of the dashboard trace table). Log lines carry `code_file_path` (an absolute local path).
+- **Local only:** no Alertmanager, and anonymous Grafana. Phase 4 needs real auth.
+
 ---
 
 ## Later (parked tasks that belong to future phases)
 - **Phase 1 follow-up:** grow the dataset to 40–50 scenarios, and run all 20+ on Gemini for a full baseline.
-- **Phase 2:** add OTel spans around `TriageAgent` nodes, using the `RunResult` fields (tokens, cost, tool calls, replans, prompt version) as span attributes.
 - **Phase 6:** keep `status=error` (infra) separate from quality failures in the gate. Use a paid key or pacing for gate runs.
 - **Phase 3:** add `tflint` to pre-commit, install `awscli` v2, and limit OIDC trust to `Mihir-Kumar13/AgentOps-Pipeline`.
 - **Phase 4:** put the Gemini key in Secrets Manager, and let the NetworkPolicy egress reach the Gemini API endpoint.

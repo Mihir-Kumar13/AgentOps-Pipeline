@@ -7,6 +7,7 @@
 | Date | Phase | What ran | Duration | Real cost (USD) | Source |
 |---|---|---|---|---|---|
 | 2026-10-31 | 0 | Nothing (local only) | n/a | 0.00 | No cloud resources used |
+| 2026-11-01 | 1–2 | Nothing on AWS (local Docker only) | n/a | 0.00 | No cloud resources used |
 
 ## Per eval run (LLM)
 | Date | Provider / model | Scenarios × N | Tokens in/out | Paid-tier equivalent (USD) | Actually billed | Notes |
@@ -20,6 +21,7 @@
 | 2026-10-31 | openai / gpt-5-nano + gpt-4o-mini | 20 × 1 re-run + 3 test calls | ~20 / ~2 | <0.00001 | <$0.00001 | gpt-5-nano still 403 (listed but not callable); one gpt-4o-mini test call OK |
 | 2026-10-31 | openai / gpt-4o-mini | 20 × 1 (+1 gpt-5-nano test call, 403) | 48,750 / 3,475 | 0.009397 | ~$0.0094 (paid key) | `results/phase1-openai-baseline.json`, the first complete real run |
 | 2026-11-01 | openai / gpt-5-nano | 20 × 1 (+1 test call) | 69,434 / 63,101 | 0.028712 | ~$0.0287 (paid key) | `results/phase1-openai-gpt5nano.json`. Reasoning tokens make output about 3.1k per scenario |
+| 2026-11-01 | openai / gpt-5-nano | 10 × 1 (Phase 2 telemetry run) | 37,330 / 31,011 | 0.014271 | ~$0.0143 (paid key) | `results/phase2-otel-run.json`. Monitoring stack is local Docker, $0 |
 
 "Paid-tier equivalent" uses `agent/llm/pricing.py`, so it is what the run would cost on a paid key. The owner's key is free tier: the 429 error names the quota `generate_content_free_tier_requests`, limit 15/min.
 Measured per scenario run: Gemini flash-lite about $0.0017–0.0020 (paid-tier equivalent), gpt-4o-mini $0.00047, gpt-5-nano $0.0014. A full 20 × N=3 eval on gpt-5-nano would be about **$0.09**.

@@ -61,3 +61,16 @@ Each entry: what we decided, why, and what it affects. Newest last.
 - **Details:** the SDK retries 429/5xx (4 retries). Reasoning tokens are billed as output and are already inside `completion_tokens`. Cached-input discounts are ignored, so recorded costs are slightly high. The free-tier pacing (`LLM_MAX_RPM`) moved to the shared `agent/llm/pacing.py`.
 - **Rule:** one model per result. Answers from Gemini and OpenAI are never merged into one baseline.
 - **Affects later phases:** in Phase 4 the key moves to Secrets Manager, and NetworkPolicy egress must allow `api.openai.com`. CLAUDE.md still names Anthropic/Bedrock.
+
+## ADR-009: Local observability stack design (Phase 2)
+- **Date:** 2026-11-01 (Phase 2)
+- **Pinned versions:** OTel Collector contrib `0.164.0`, Tempo `2.10.10`, Loki `3.7.9`, Prometheus `v3.15.1`, Grafana `13.3.0`, OTel Python SDK `1.45.2`.
+- **Tempo 2.x, not 3.x:** Tempo 3 reworked its architecture and config. 2.10.10 is the latest 2.x, and its single-binary local-disk setup is well known. Revisit when the EKS Helm values are written (Phase 4).
+- **Metrics sent directly, plus spanmetrics:** the 6 contract metrics (and `agent_tool_calls_total`, the tool-error-rate denominator) are recorded by the agent with exact names (`docs/METRICS.md`). Cost cannot be derived from traces. The Collector's span_metrics connector only adds per-step latency.
+- **Counters start at 0** for known label sets at agent start. Otherwise Prometheus misses each new process's first increment.
+- **`agent_tool_errors_total` counts real tool failures only.** Duplicate calls and unknown tools are model mistakes and already show up as loops/replans.
+- **Trace propagation:** the tool client sends W3C `traceparent`, and FastAPI (0.162+ has built-in OTel spans) joins the mock-tools request to the run's trace.
+- **Off by default:** nothing is exported unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set, so `make test` and `make eval` need no stack.
+- **Local security:** all ports bind to `127.0.0.1`. Grafana is anonymous-Editor with no login form; that is acceptable only because it is local. EKS (Phase 4) will use real auth or port-forward.
+- **No Alertmanager yet:** alerts are evaluated and visible in Prometheus/Grafana, but not sent anywhere.
+- **Known noise:** the agent container's `/healthz` checks create small `GET /healthz` traces every 10 s. The dashboard's trace table filters them out.
